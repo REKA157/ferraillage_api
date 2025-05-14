@@ -16,16 +16,16 @@ async def generate_plan(request: Request):
             json.dump(data, f)
 
         # Appel du script FreeCAD via subprocess
-        process = subprocess.run(
-            ["subprocess.run([
-  "C:\\Program Files\\FreeCAD 1.0\\bin\\FreeCADCmd.exe",
-  "generate_structure_fc.py"
-])
-", "generate_structure_fc.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+       process = subprocess.run(
+    [
+        "C:\\Program Files\\FreeCAD 1.0\\bin\\FreeCADCmd.exe",
+        "generate_structure_fc.py"
+    ],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True
+)
+
 
         if process.returncode != 0:
             return JSONResponse(
