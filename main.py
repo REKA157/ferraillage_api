@@ -155,10 +155,15 @@ async def generate_pdf(request: Request):
         # === Génération PDF ===
         pdf = FPDF(orientation='L', unit='mm', format='A4')
         pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt="Rapport de Ferraillage – BE.ON", ln=True)
+
+        # Utilise ta police Unicode : assure-toi que NotoSans-Regular.ttf est bien à la racine
+        pdf.add_font("NotoSans", "", "./NotoSans-Regular.ttf", uni=True)
+        pdf.set_font("NotoSans", size=11)
+
+        pdf.cell(0, 10, txt="Rapport de Ferraillage – BE.ON ⌀ φ ✔️", ln=True)
         pdf.image(img_path, x=10, y=20, w=270)
         pdf.output(pdf_path)
+
 
         return FileResponse(pdf_path, media_type="application/pdf", filename="rapport_ferraillage.pdf")
 
