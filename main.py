@@ -19,17 +19,19 @@ async def generate_pdf(request: Request):
         esp = armatures.get("Espacement", "15cm")
 
         def clean(text):
-            return text.replace("⌀", "phi").replace("@", "à").replace("ø", "phi")
+            return text.replace("⌀", "phi").replace("@", " à ").replace("ø", "phi").encode("ascii", "ignore").decode("ascii")
 
         longi = clean(longi)
         transv = clean(transv)
         esp = clean(esp)
 
-        # === Génération de l'image du plan ===
         img_path = "/tmp/plan.png"
-        fig, ax = plt.subplots(figsize=(8, 8))
-        ax.set_xlim(-0.05, length + 0.05)
-        ax.set_ylim(-0.2, height + 0.4)
+        pdf_path = "/tmp/ferraillage_visible.pdf"
+
+        # 🖼 Génération de l'image avec cadre de visualisation fixe
+        fig, ax = plt.subplots(figsize=(8, 10))
+        ax.set_xlim(-0.1, 1)
+        ax.set_ylim(-0.1, 4)
         ax.set_aspect('equal')
         ax.axis('off')
 
@@ -42,7 +44,7 @@ async def generate_pdf(request: Request):
         ax.plot([0.03], [width-0.03], 'ko')
         ax.text(length/2 - 0.05, -0.06, "Vue en Plan", fontsize=10, weight="bold")
 
-        # Coupe A-A (en haut)
+        # Coupe A-A
         base_x = 0
         base_y = height + 0.1
         ax.plot([base_x, base_x], [base_y, base_y + height], 'k-')
@@ -58,11 +60,10 @@ async def generate_pdf(request: Request):
         ax.plot([base_x + length - 0.03, base_x + length - 0.03], [base_y, base_y + height], 'k-')
         ax.text(base_x + length/2 - 0.05, base_y + height + 0.1, "Coupe A-A", fontsize=10, weight="bold")
 
-        plt.savefig(img_path, bbox_inches='tight', dpi=300)
+        plt.savefig(img_path, dpi=300)
         plt.close()
 
-        # === Génération du PDF ===
-        pdf_path = "/tmp/ferraillage_final.pdf"
+        # 📄 Génération du PDF
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=14)
@@ -79,10 +80,6 @@ async def generate_pdf(request: Request):
         pdf.output(pdf_path)
 
         return FileResponse(pdf_path, media_type="application/pdf", filename="rapport_ferraillage.pdf")
-
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
