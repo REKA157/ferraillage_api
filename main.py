@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrow, Rectangle
+from matplotlib.patches import Rectangle
 from fpdf import FPDF
 import os
 
@@ -11,7 +11,7 @@ app = FastAPI()
 async def generate_pdf(request: Request):
     try:
         data = await request.json()
-        length = float(data.get("length", 0.3))  # m
+        length = float(data.get("length", 0.3))  # en mètres
         width = float(data.get("width", 0.3))
         height = float(data.get("height", 3.0))
         armatures = data.get("Armatures", {})
@@ -35,30 +35,27 @@ async def generate_pdf(request: Request):
         img_path = "/tmp/plan.png"
         pdf_path = "/tmp/ferraillage_visible.pdf"
 
-        # === Génération du plan ===
+        # === Génération du schéma ===
         fig, ax = plt.subplots(figsize=(9, 13))
-        ax.set_xlim(-0.5, max(length, width) + 0.5)
-        ax.set_ylim(-0.5, height + width + 2)
+        ax.set_xlim(-0.5, max(length, width) + 4)
+        ax.set_ylim(-0.5, height + width + 3)
         ax.set_aspect('equal')
         ax.axis('off')
 
         bar_radius = 0.02
         line_thick = 2
 
-        # --- Vue en plan ---
+        # --- Vue en Plan ---
         ax.text(length / 2 - 0.2, -0.2, "Vue en Plan", fontsize=12, weight='bold')
         ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], color="black", linewidth=line_thick)
 
-        # Armatures plan (cercles rouges aux coins)
         for x in [0.05, length - 0.05]:
             for y in [0.05, width - 0.05]:
                 ax.add_patch(plt.Circle((x, y), bar_radius, color='darkred'))
 
-        # Cotes plan (longueur/largeur)
         ax.annotate(f"{length:.2f} m", xy=(length / 2 - 0.15, width + 0.05), fontsize=10)
         ax.annotate(f"{width:.2f} m", xy=(length + 0.05, width / 2 - 0.05), fontsize=10, rotation=90)
 
-        # Repère A-A
         ax.annotate("A", xy=(-0.2, width / 2), fontsize=12, weight='bold')
         ax.annotate("A", xy=(length + 0.1, width / 2), fontsize=12, weight='bold')
         ax.annotate("⟵", xy=(-0.25, width / 2), fontsize=14)
@@ -71,12 +68,10 @@ async def generate_pdf(request: Request):
         ax.plot([0, 0], [y0, y0 + height], 'black', linewidth=line_thick)
         ax.plot([length, length], [y0, y0 + height], 'black', linewidth=line_thick)
         ax.plot([0, length], [y0, y0], 'black', linewidth=line_thick)
-        ax.plot([0, length], [y0 + height], 'black', linewidth=line_thick)
+        ax.plot([0, length], [y0 + height, y0 + height], 'black', linewidth=line_thick)  # <-- Correction ici
 
-        # Cotes hauteur
         ax.annotate(f"{height:.2f} m", xy=(length + 0.05, y0 + height / 2 - 0.05), fontsize=10, rotation=90)
 
-        # Armatures coupe (transversales + coins)
         for i in range(int(height / 0.15)):
             y = y0 + i * 0.15
             ax.plot([0.05, length - 0.05], [y, y], 'blue', linestyle='--', linewidth=0.7)
@@ -86,7 +81,7 @@ async def generate_pdf(request: Request):
         ax.add_patch(plt.Circle((0.05, y0 + height - 0.05), bar_radius, color='darkred'))
         ax.add_patch(plt.Circle((length - 0.05, y0 + height - 0.05), bar_radius, color='darkred'))
 
-        # --- Légende ---
+        # --- Légende graphique ---
         legend_y = y0 + height + 0.7
         ax.text(0, legend_y, "LÉGENDE :", fontsize=12, weight="bold")
         ax.plot([0.1, 0.5], [legend_y - 0.1, legend_y - 0.1], color='black', linewidth=2)
@@ -96,7 +91,7 @@ async def generate_pdf(request: Request):
         ax.plot([0.1, 0.5], [legend_y - 0.7, legend_y - 0.7], 'blue', linestyle='--', linewidth=1)
         ax.text(0.6, legend_y - 0.75, "Étriers (transversaux)", fontsize=10)
 
-        # --- Cadre cartouche ---
+        # --- Cartouche ---
         cart_x = length + 0.5
         cart_y = -0.5
         ax.add_patch(Rectangle((cart_x, cart_y), 3.5, 2.5, fill=False, edgecolor='black', linewidth=1))
@@ -114,7 +109,7 @@ async def generate_pdf(request: Request):
         if not os.path.exists(img_path):
             return JSONResponse(status_code=500, content={"error": "plan.png non généré"})
 
-        # === PDF avec image + texte ===
+        # === PDF final ===
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=14)
@@ -133,4 +128,3 @@ async def generate_pdf(request: Request):
     except Exception as e:
         import traceback
         return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
-
