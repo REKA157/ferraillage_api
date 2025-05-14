@@ -1,5 +1,5 @@
 fastapi
 uvicorn
-fpdf
+fpdf2
 ezdxf
 matplotlib
