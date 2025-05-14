@@ -9,50 +9,90 @@ app = FastAPI()
 async def generate_dxf(request: Request):
     try:
         data = await request.json()
-        length = float(data.get("length", 0.4)) * 1000  # convert m to mm
-        width = float(data.get("width", 0.4)) * 1000
+        length = float(data.get("length", 0.3)) * 1000  # m to mm
+        width = float(data.get("width", 0.3)) * 1000
+        height = float(data.get("height", 3.0)) * 1000
 
         armatures = data.get("Armatures", {})
-        longi = armatures.get("Longitudinales", "4x12mm")
-        transv = armatures.get("Transversales", "⌀6mm @20cm")
+        longi = armatures.get("Longitudinales", "4x16mm")
+        transv = armatures.get("Transversales", "HA10 ⌀ @15cm")
 
         def clean(text):
-            return text.replace("⌀", "phi").replace("@", " à ").replace("ø", "phi")
+            return text.replace("⌀", "phi").replace("@", "à").replace("ø", "phi")
 
         longi = clean(longi)
         transv = clean(transv)
 
         doc = ezdxf.new(dxfversion="R2010")
         msp = doc.modelspace()
-
-        # rectangle (section poteau)
-        msp.add_lwpolyline([(0, 0), (length, 0), (length, width), (0, width)], close=True)
-
-        # barres longitudinales (coins)
-        cover = 40
+        cover = 25
         radius = 8
-        msp.add_circle((cover, cover), radius)
-        msp.add_circle((length - cover, cover), radius)
-        msp.add_circle((length - cover, width - cover), radius)
-        msp.add_circle((cover, width - cover), radius)
 
-        # étrier intérieur
+        # === VUE EN PLAN (en bas à gauche) ===
+        origin_x = 0
+        origin_y = 0
         msp.add_lwpolyline([
-            (cover, cover),
-            (length - cover, cover),
-            (length - cover, width - cover),
-            (cover, width - cover),
-            (cover, cover)
-        ], dxfattribs={"color": 1})
+            (origin_x, origin_y),
+            (origin_x + length, origin_y),
+            (origin_x + length, origin_y + width),
+            (origin_x, origin_y + width),
+            (origin_x, origin_y)
+        ], close=True)
 
-        # annotations
-        msp.add_text(f"Longi: {longi}", dxfattribs={"height": 150, "insert": (0, width + 100)})
-        msp.add_text(f"Transv: {transv}", dxfattribs={"height": 150, "insert": (0, width + 300)})
+        # barres aux coins
+        msp.add_circle((origin_x + cover, origin_y + cover), radius)
+        msp.add_circle((origin_x + length - cover, origin_y + cover), radius)
+        msp.add_circle((origin_x + length - cover, origin_y + width - cover), radius)
+        msp.add_circle((origin_x + cover, origin_y + width - cover), radius)
 
-        file_path = "/tmp/plan_ferraillage.dxf"
+        # annotation
+        msp.add_text("A-A", dxfattribs={"height": 100}).set_pos((origin_x + length/2 - 20, origin_y - 150))
+
+        # === VUE EN COUPE A-A (à droite) ===
+        cx = origin_x + 600
+        cy = origin_y
+
+        # contour
+        msp.add_lwpolyline([
+            (cx, cy),
+            (cx, cy + height),
+            (cx + length, cy + height),
+            (cx + length, cy),
+            (cx, cy)
+        ], close=True)
+
+        # étriers espacés (tous les 150mm)
+        etrier_step = 150
+        num_etriers = int(height / etrier_step)
+        for i in range(num_etriers):
+            y = cy + i * etrier_step
+            msp.add_lwpolyline([
+                (cx + cover, y + cover),
+                (cx + length - cover, y + cover),
+                (cx + length - cover, y + length - cover),
+                (cx + cover, y + length - cover),
+                (cx + cover, y + cover)
+            ], dxfattribs={"color": 1})
+
+        # barres longitudinales
+        msp.add_line((cx + cover, cy), (cx + cover, cy + height))
+        msp.add_line((cx + length - cover, cy), (cx + length - cover, cy + height))
+
+        # annotation
+        msp.add_text("Coupe A-A", dxfattribs={"height": 100}).set_pos((cx, cy - 150))
+
+        # === TABLEAU ARMATURES (en haut à droite) ===
+        tx = origin_x + 1300
+        ty = origin_y + height
+
+        msp.add_text("TABLEAU ARMATURES", dxfattribs={"height": 100}).set_pos((tx, ty + 100))
+        msp.add_text("1 - Longi: " + longi, dxfattribs={"height": 80}).set_pos((tx, ty))
+        msp.add_text("2 - Transv: " + transv, dxfattribs={"height": 80}).set_pos((tx, ty - 120))
+
+        file_path = "/tmp/plan_ferraillage_complet.dxf"
         doc.saveas(file_path)
 
-        return FileResponse(file_path, media_type="application/dxf", filename="plan_ferraillage.dxf")
+        return FileResponse(file_path, media_type="application/dxf", filename="plan_ferraillage_complet.dxf")
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
