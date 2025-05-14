@@ -1,98 +1,40 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
-import matplotlib.pyplot as plt
-from fpdf import FPDF
-import os
+fig, ax = plt.subplots(figsize=(8, 12))
+ax.set_xlim(-0.2, length + 0.2)
+ax.set_ylim(-0.2, height + width + 0.6)
+ax.set_aspect('equal')
+ax.axis('off')
 
-app = FastAPI()
+# --- Vue en plan ---
+plan_offset = 0
+ax.plot([0, length, length, 0, 0],
+        [plan_offset, plan_offset, width + plan_offset, width + plan_offset, plan_offset],
+        color='black', linewidth=2)
+ax.text(length/2 - 0.1, plan_offset - 0.1, "Vue en Plan", fontsize=12, weight='bold')
 
-@app.post("/generate")
-async def generate_pdf(request: Request):
-    try:
-        data = await request.json()
-        length = float(data.get("length", 0.3))  # en m
-        width = float(data.get("width", 0.3))
-        height = float(data.get("height", 3.0))
-        armatures = data.get("Armatures", {})
-        longi = armatures.get("Longitudinales", "4x16mm")
-        transv = armatures.get("Transversales", "phi6mm à 15cm")
-        esp = armatures.get("Espacement", "15cm")
+# Barres aux coins
+bar_radius = 0.02
+ax.add_patch(plt.Circle((0.05, 0.05 + plan_offset), bar_radius, color='darkred'))
+ax.add_patch(plt.Circle((length - 0.05, 0.05 + plan_offset), bar_radius, color='darkred'))
+ax.add_patch(plt.Circle((length - 0.05, width - 0.05 + plan_offset), bar_radius, color='darkred'))
+ax.add_patch(plt.Circle((0.05, width - 0.05 + plan_offset), bar_radius, color='darkred'))
 
-        def clean(text):
-            return (
-                text.replace("⌀", "phi")
-                    .replace("@", " à ")
-                    .replace("ø", "phi")
-                    .encode("ascii", "ignore")
-                    .decode("ascii")
-            )
+# Repères coupe A-A
+ax.annotate("A", xy=(length + 0.05, width / 2 + plan_offset), fontsize=12, weight='bold')
+ax.annotate("A", xy=(-0.1, width / 2 + plan_offset), fontsize=12, weight='bold')
+ax.annotate("⟶", xy=(length + 0.02, width / 2 + plan_offset + 0.02), fontsize=12)
+ax.annotate("⟵", xy=(-0.15, width / 2 + plan_offset + 0.02), fontsize=12)
 
-        longi = clean(longi)
-        transv = clean(transv)
-        esp = clean(esp)
+# --- Coupe A-A ---
+sec_base_y = width + 0.4
+ax.plot([0, 0], [sec_base_y, sec_base_y + height], 'k-', linewidth=2)
+ax.plot([length, length], [sec_base_y, sec_base_y + height], 'k-', linewidth=2)
+ax.plot([0, length], [sec_base_y, sec_base_y], 'k-', linewidth=2)
+ax.plot([0, length], [sec_base_y + height], 'k-', linewidth=2)
 
-        # === Génération de l'image du plan ===
-        img_path = "/tmp/plan.png"
-        pdf_path = "/tmp/ferraillage_visible.pdf"
+# Barres transversales
+for i in range(int(height / 0.15)):
+    y = sec_base_y + i * 0.15
+    ax.plot([0.05, length - 0.05], [y, y], 'blue', linewidth=0.6, linestyle='--')
 
-        fig, ax = plt.subplots(figsize=(6, 9))
-        ax.set_xlim(-0.1, 1)
-        ax.set_ylim(-0.1, 4)
-        ax.set_aspect('equal')
-        ax.axis('off')
+# Barres verticales (c
 
-        # VUE EN PLAN
-        ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], 'k-', linewidth=2)
-        ax.plot([0.03, length - 0.03, length - 0.03, 0.03, 0.03],
-                [0.03, 0.03, width - 0.03, width - 0.03, 0.03], 'r--')
-        ax.plot([0.03], [0.03], 'ko')
-        ax.plot([length - 0.03], [0.03], 'ko')
-        ax.plot([length - 0.03], [width - 0.03], 'ko')
-        ax.plot([0.03], [width - 0.03], 'ko')
-        ax.text(length / 2 - 0.05, -0.05, "Vue en Plan", fontsize=10, weight="bold")
-
-        # COUPE A-A
-        base_x = 0
-        base_y = height + 0.2
-        ax.plot([base_x, base_x], [base_y, base_y + height], 'k-')
-        ax.plot([base_x + length, base_x + length], [base_y, base_y + height], 'k-')
-        ax.plot([base_x, base_x + length], [base_y, base_y], 'k-')
-        ax.plot([base_x, base_x + length], [base_y + height, base_y + height], 'k-')
-
-        for i in range(int(height / 0.15)):
-            y = base_y + i * 0.15
-            ax.plot([base_x + 0.03, base_x + length - 0.03], [y, y], 'r--', linewidth=0.5)
-
-        ax.plot([base_x + 0.03, base_x + 0.03], [base_y, base_y + height], 'k-')
-        ax.plot([base_x + length - 0.03, base_x + length - 0.03], [base_y, base_y + height], 'k-')
-        ax.text(base_x + length / 2 - 0.05, base_y + height + 0.1, "Coupe A-A", fontsize=10, weight="bold")
-
-        # Sauvegarde de l'image
-        plt.savefig(img_path, dpi=100)
-        plt.close()
-
-        # Vérification image
-        if not os.path.exists(img_path):
-            return JSONResponse(status_code=500, content={"error": "plan.png non généré"})
-
-        # === PDF final
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=14)
-        pdf.cell(200, 10, txt="Rapport de Ferraillage BE.ON", ln=True)
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt=f"Longueur : {length} m", ln=True)
-        pdf.cell(200, 10, txt=f"Largeur : {width} m", ln=True)
-        pdf.cell(200, 10, txt=f"Hauteur : {height} m", ln=True)
-        pdf.cell(200, 10, txt=f"Armatures Longitudinales : {longi}", ln=True)
-        pdf.cell(200, 10, txt=f"Armatures Transversales : {transv}", ln=True)
-        pdf.cell(200, 10, txt=f"Espacement : {esp}", ln=True)
-        pdf.ln(10)
-        pdf.image(img_path, x=10, w=190)
-        pdf.output(pdf_path)
-
-        return FileResponse(pdf_path, media_type="application/pdf", filename="rapport_ferraillage.pdf")
-
-    except Exception as e:
-        import traceback
-        return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
