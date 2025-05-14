@@ -46,13 +46,12 @@ async def generate_dxf(request: Request):
         msp.add_circle((origin_x + cover, origin_y + width - cover), radius)
 
         # annotation
-        msp.add_text("A-A", dxfattribs={"height": 100}).set_pos((origin_x + length/2 - 20, origin_y - 150))
+        msp.add_text("A-A", dxfattribs={"height": 100, "insert": (origin_x + length / 2 - 20, origin_y - 150)})
 
         # === VUE EN COUPE A-A (à droite) ===
         cx = origin_x + 600
         cy = origin_y
 
-        # contour
         msp.add_lwpolyline([
             (cx, cy),
             (cx, cy + height),
@@ -61,7 +60,6 @@ async def generate_dxf(request: Request):
             (cx, cy)
         ], close=True)
 
-        # étriers espacés (tous les 150mm)
         etrier_step = 150
         num_etriers = int(height / etrier_step)
         for i in range(num_etriers):
@@ -74,20 +72,18 @@ async def generate_dxf(request: Request):
                 (cx + cover, y + cover)
             ], dxfattribs={"color": 1})
 
-        # barres longitudinales
         msp.add_line((cx + cover, cy), (cx + cover, cy + height))
         msp.add_line((cx + length - cover, cy), (cx + length - cover, cy + height))
 
-        # annotation
-        msp.add_text("Coupe A-A", dxfattribs={"height": 100}).set_pos((cx, cy - 150))
+        msp.add_text("Coupe A-A", dxfattribs={"height": 100, "insert": (cx, cy - 150)})
 
         # === TABLEAU ARMATURES (en haut à droite) ===
         tx = origin_x + 1300
         ty = origin_y + height
 
-        msp.add_text("TABLEAU ARMATURES", dxfattribs={"height": 100}).set_pos((tx, ty + 100))
-        msp.add_text("1 - Longi: " + longi, dxfattribs={"height": 80}).set_pos((tx, ty))
-        msp.add_text("2 - Transv: " + transv, dxfattribs={"height": 80}).set_pos((tx, ty - 120))
+        msp.add_text("TABLEAU ARMATURES", dxfattribs={"height": 100, "insert": (tx, ty + 100)})
+        msp.add_text("1 - Longi: " + longi, dxfattribs={"height": 80, "insert": (tx, ty)})
+        msp.add_text("2 - Transv: " + transv, dxfattribs={"height": 80, "insert": (tx, ty - 120)})
 
         file_path = "/tmp/plan_ferraillage_complet.dxf"
         doc.saveas(file_path)
@@ -96,3 +92,4 @@ async def generate_dxf(request: Request):
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
