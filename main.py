@@ -1,94 +1,88 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
-import ezdxf
+import matplotlib.pyplot as plt
+from fpdf import FPDF
 import os
 
 app = FastAPI()
 
 @app.post("/generate")
-async def generate_dxf(request: Request):
+async def generate_pdf(request: Request):
     try:
         data = await request.json()
-        length = float(data.get("length", 0.3)) * 1000  # m to mm
-        width = float(data.get("width", 0.3)) * 1000
-        height = float(data.get("height", 3.0)) * 1000
-
+        length = float(data.get("length", 0.3))
+        width = float(data.get("width", 0.3))
+        height = float(data.get("height", 3.0))
         armatures = data.get("Armatures", {})
         longi = armatures.get("Longitudinales", "4x16mm")
-        transv = armatures.get("Transversales", "HA10 ⌀ @15cm")
+        transv = armatures.get("Transversales", "⌀6mm @15cm")
+        esp = armatures.get("Espacement", "15cm")
 
         def clean(text):
             return text.replace("⌀", "phi").replace("@", "à").replace("ø", "phi")
 
         longi = clean(longi)
         transv = clean(transv)
+        esp = clean(esp)
 
-        doc = ezdxf.new(dxfversion="R2010")
-        msp = doc.modelspace()
-        cover = 25
-        radius = 8
+        # === Génération de l'image du plan ===
+        img_path = "/tmp/plan.png"
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.set_xlim(-0.05, length + 0.05)
+        ax.set_ylim(-0.2, height + 0.4)
+        ax.set_aspect('equal')
+        ax.axis('off')
 
-        # === VUE EN PLAN (en bas à gauche) ===
-        origin_x = 0
-        origin_y = 0
-        msp.add_lwpolyline([
-            (origin_x, origin_y),
-            (origin_x + length, origin_y),
-            (origin_x + length, origin_y + width),
-            (origin_x, origin_y + width),
-            (origin_x, origin_y)
-        ], close=True)
+        # Vue en plan
+        ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], 'k-', linewidth=2)
+        ax.plot([0.03, length-0.03, length-0.03, 0.03, 0.03], [0.03, 0.03, width-0.03, width-0.03, 0.03], 'r--')
+        ax.plot([0.03], [0.03], 'ko')
+        ax.plot([length-0.03], [0.03], 'ko')
+        ax.plot([length-0.03], [width-0.03], 'ko')
+        ax.plot([0.03], [width-0.03], 'ko')
+        ax.text(length/2 - 0.05, -0.06, "Vue en Plan", fontsize=10, weight="bold")
 
-        # barres aux coins
-        msp.add_circle((origin_x + cover, origin_y + cover), radius)
-        msp.add_circle((origin_x + length - cover, origin_y + cover), radius)
-        msp.add_circle((origin_x + length - cover, origin_y + width - cover), radius)
-        msp.add_circle((origin_x + cover, origin_y + width - cover), radius)
+        # Coupe A-A (en haut)
+        base_x = 0
+        base_y = height + 0.1
+        ax.plot([base_x, base_x], [base_y, base_y + height], 'k-')
+        ax.plot([base_x + length, base_x + length], [base_y, base_y + height], 'k-')
+        ax.plot([base_x, base_x + length], [base_y + height, base_y + height], 'k-')
+        ax.plot([base_x, base_x + length], [base_y, base_y], 'k-')
 
-        # annotation
-        msp.add_text("A-A", dxfattribs={"height": 100, "insert": (origin_x + length / 2 - 20, origin_y - 150)})
+        for i in range(int(height / 0.15)):
+            y = base_y + i * 0.15
+            ax.plot([base_x + 0.03, base_x + length - 0.03], [y, y], 'r--', linewidth=0.5)
 
-        # === VUE EN COUPE A-A (à droite) ===
-        cx = origin_x + 600
-        cy = origin_y
+        ax.plot([base_x + 0.03, base_x + 0.03], [base_y, base_y + height], 'k-')
+        ax.plot([base_x + length - 0.03, base_x + length - 0.03], [base_y, base_y + height], 'k-')
+        ax.text(base_x + length/2 - 0.05, base_y + height + 0.1, "Coupe A-A", fontsize=10, weight="bold")
 
-        msp.add_lwpolyline([
-            (cx, cy),
-            (cx, cy + height),
-            (cx + length, cy + height),
-            (cx + length, cy),
-            (cx, cy)
-        ], close=True)
+        plt.savefig(img_path, bbox_inches='tight', dpi=300)
+        plt.close()
 
-        etrier_step = 150
-        num_etriers = int(height / etrier_step)
-        for i in range(num_etriers):
-            y = cy + i * etrier_step
-            msp.add_lwpolyline([
-                (cx + cover, y + cover),
-                (cx + length - cover, y + cover),
-                (cx + length - cover, y + length - cover),
-                (cx + cover, y + length - cover),
-                (cx + cover, y + cover)
-            ], dxfattribs={"color": 1})
+        # === Génération du PDF ===
+        pdf_path = "/tmp/ferraillage_final.pdf"
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=14)
+        pdf.cell(200, 10, txt="Rapport de Ferraillage BE.ON", ln=True)
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt=f"Longueur : {length} m", ln=True)
+        pdf.cell(200, 10, txt=f"Largeur : {width} m", ln=True)
+        pdf.cell(200, 10, txt=f"Hauteur : {height} m", ln=True)
+        pdf.cell(200, 10, txt=f"Armatures Longitudinales : {longi}", ln=True)
+        pdf.cell(200, 10, txt=f"Armatures Transversales : {transv}", ln=True)
+        pdf.cell(200, 10, txt=f"Espacement : {esp}", ln=True)
+        pdf.ln(10)
+        pdf.image(img_path, x=10, w=190)
+        pdf.output(pdf_path)
 
-        msp.add_line((cx + cover, cy), (cx + cover, cy + height))
-        msp.add_line((cx + length - cover, cy), (cx + length - cover, cy + height))
+        return FileResponse(pdf_path, media_type="application/pdf", filename="rapport_ferraillage.pdf")
 
-        msp.add_text("Coupe A-A", dxfattribs={"height": 100, "insert": (cx, cy - 150)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-        # === TABLEAU ARMATURES (en haut à droite) ===
-        tx = origin_x + 1300
-        ty = origin_y + height
-
-        msp.add_text("TABLEAU ARMATURES", dxfattribs={"height": 100, "insert": (tx, ty + 100)})
-        msp.add_text("1 - Longi: " + longi, dxfattribs={"height": 80, "insert": (tx, ty)})
-        msp.add_text("2 - Transv: " + transv, dxfattribs={"height": 80, "insert": (tx, ty - 120)})
-
-        file_path = "/tmp/plan_ferraillage_complet.dxf"
-        doc.saveas(file_path)
-
-        return FileResponse(file_path, media_type="application/dxf", filename="plan_ferraillage_complet.dxf")
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
