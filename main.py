@@ -16,21 +16,19 @@ async def generate_dxf(request: Request):
         longi = armatures.get("Longitudinales", "4x12mm")
         transv = armatures.get("Transversales", "⌀6mm @20cm")
 
-        # Nettoyer texte pour annotation
         def clean(text):
             return text.replace("⌀", "phi").replace("@", " à ").replace("ø", "phi")
 
         longi = clean(longi)
         transv = clean(transv)
 
-        # Création du fichier DXF
         doc = ezdxf.new(dxfversion="R2010")
         msp = doc.modelspace()
 
-        # Rectangle poteau
+        # rectangle (section poteau)
         msp.add_lwpolyline([(0, 0), (length, 0), (length, width), (0, width)], close=True)
 
-        # Barres longitudinales (coins)
+        # barres longitudinales (coins)
         cover = 40
         radius = 8
         msp.add_circle((cover, cover), radius)
@@ -38,7 +36,7 @@ async def generate_dxf(request: Request):
         msp.add_circle((length - cover, width - cover), radius)
         msp.add_circle((cover, width - cover), radius)
 
-        # Étrier (cadre intérieur)
+        # étrier intérieur
         msp.add_lwpolyline([
             (cover, cover),
             (length - cover, cover),
@@ -47,9 +45,9 @@ async def generate_dxf(request: Request):
             (cover, cover)
         ], dxfattribs={"color": 1})
 
-        # Annotations
-        msp.add_text(f"Longi: {longi}", dxfattribs={"height": 150}).set_pos((0, width + 100))
-        msp.add_text(f"Transv: {transv}", dxfattribs={"height": 150}).set_pos((0, width + 300))
+        # annotations
+        msp.add_text(f"Longi: {longi}", dxfattribs={"height": 150, "insert": (0, width + 100)})
+        msp.add_text(f"Transv: {transv}", dxfattribs={"height": 150, "insert": (0, width + 300)})
 
         file_path = "/tmp/plan_ferraillage.dxf"
         doc.saveas(file_path)
@@ -58,4 +56,3 @@ async def generate_dxf(request: Request):
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
