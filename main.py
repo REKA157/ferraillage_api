@@ -1,63 +1,61 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-import base64
+from fastapi.responses import FileResponse
+import matplotlib.pyplot as plt
 from fpdf import FPDF
 import os
 
 app = FastAPI()
 
 @app.post("/generate")
-async def generate_pdf(request: Request):
+async def generate(request: Request):
     data = await request.json()
 
+    # Récupération des données
     length = float(data.get("length", 0.4))
     width = float(data.get("width", 0.4))
-
     armatures = data.get("Armatures", {})
-    longitudinal = armatures.get("Longitudinales", "H12")
-    transversal = armatures.get("Transversales", "H8")
-    espacement = armatures.get("Espacement", "20cm")
+    longi = armatures.get("Longitudinales", "4x12mm")
+    transv = armatures.get("Transversales", "⌀6mm @20cm")
+    esp = armatures.get("Espacement", "20cm")
 
-    # Nettoyage caractères spéciaux pour éviter l’erreur latin-1
-    def sanitize(text):
-        return (
-            text.replace("⌀", "phi")
-                .replace("ø", "phi")
-                .replace("@", " à ")
-                .encode("ascii", "ignore")  # supprime tout caractère illégal
-                .decode("ascii")
-        )
+    # Fichier temporaire image
+    img_path = "/tmp/plan.png"
+    pdf_path = "/tmp/rapport.pdf"
 
-    longitudinal = sanitize(longitudinal)
-    transversal = sanitize(transversal)
-    espacement = sanitize(espacement)
+    # 🔧 1. GÉNÉRATION DU PLAN AVEC MATPLOTLIB
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.set_title("Plan de Ferraillage (vue de dessus)", fontsize=10)
+    ax.set_xlim(0, length)
+    ax.set_ylim(0, width)
 
-    # Génération PDF
+    # Barres longitudinales (cercles aux coins)
+    ax.plot([0.05, length-0.05], [0.05, 0.05], 'ko', label='Longitudinales')
+    ax.plot([0.05, length-0.05], [width-0.05, width-0.05], 'ko')
+
+    # Cadre (étrier)
+    ax.plot([0.05, length-0.05, length-0.05, 0.05, 0.05],
+            [0.05, 0.05, width-0.05, width-0.05, 0.05], 'r--', label='Transversales')
+
+    ax.legend(loc='lower right')
+    ax.axis('off')
+    plt.savefig(img_path, bbox_inches='tight')
+    plt.close()
+
+    # 🔧 2. GÉNÉRATION DU PDF AVEC L’IMAGE INTÉGRÉE
     pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", size=14)
     pdf.cell(200, 10, txt="Rapport de Ferraillage BE.ON", ln=True)
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt=f"Longueur : {length} m", ln=True)
     pdf.cell(200, 10, txt=f"Largeur : {width} m", ln=True)
-    pdf.cell(200, 10, txt=f"Armatures Longitudinales : {longitudinal}", ln=True)
-    pdf.cell(200, 10, txt=f"Armatures Transversales : {transversal}", ln=True)
-    pdf.cell(200, 10, txt=f"Espacement : {espacement}", ln=True)
+    pdf.cell(200, 10, txt=f"Armatures Longitudinales : {longi}", ln=True)
+    pdf.cell(200, 10, txt=f"Armatures Transversales : {transv}", ln=True)
+    pdf.cell(200, 10, txt=f"Espacement : {esp}", ln=True)
+    pdf.ln(10)
+    pdf.image(img_path, x=10, w=180)
 
-    file_path = "/tmp/rapport.pdf"
-    try:
-        pdf.output(file_path)
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Erreur PDF", "details": str(e)}
-        )
+    pdf.output(pdf_path)
 
-    # Encoder PDF en base64
-    with open(file_path, "rb") as f:
-        encoded_pdf = base64.b64encode(f.read()).decode("utf-8")
-
-    return JSONResponse(content={
-        "report_pdf": f"data:application/pdf;base64,{encoded_pdf}"
-    })
+    # 🔁 3. RETOUR DU FICHIER PDF DIRECTEMENT
+    return FileResponse(pdf_path, media_type='application/pdf', filename="ferraillage.pdf")
