@@ -10,47 +10,54 @@ app = FastAPI()
 async def generate_pdf(request: Request):
     try:
         data = await request.json()
-        length = float(data.get("length", 0.3))
+        length = float(data.get("length", 0.3))  # en m
         width = float(data.get("width", 0.3))
         height = float(data.get("height", 3.0))
         armatures = data.get("Armatures", {})
         longi = armatures.get("Longitudinales", "4x16mm")
-        transv = armatures.get("Transversales", "⌀6mm @15cm")
+        transv = armatures.get("Transversales", "phi6mm à 15cm")
         esp = armatures.get("Espacement", "15cm")
 
         def clean(text):
-            return text.replace("⌀", "phi").replace("@", " à ").replace("ø", "phi").encode("ascii", "ignore").decode("ascii")
+            return (
+                text.replace("⌀", "phi")
+                    .replace("@", " à ")
+                    .replace("ø", "phi")
+                    .encode("ascii", "ignore")
+                    .decode("ascii")
+            )
 
         longi = clean(longi)
         transv = clean(transv)
         esp = clean(esp)
 
+        # === Génération de l'image du plan ===
         img_path = "/tmp/plan.png"
         pdf_path = "/tmp/ferraillage_visible.pdf"
 
-        # 🖼 Génération de l'image avec cadre de visualisation fixe
-        fig, ax = plt.subplots(figsize=(8, 10))
+        fig, ax = plt.subplots(figsize=(6, 9))
         ax.set_xlim(-0.1, 1)
         ax.set_ylim(-0.1, 4)
         ax.set_aspect('equal')
         ax.axis('off')
 
-        # Vue en plan
+        # VUE EN PLAN
         ax.plot([0, length, length, 0, 0], [0, 0, width, width, 0], 'k-', linewidth=2)
-        ax.plot([0.03, length-0.03, length-0.03, 0.03, 0.03], [0.03, 0.03, width-0.03, width-0.03, 0.03], 'r--')
+        ax.plot([0.03, length - 0.03, length - 0.03, 0.03, 0.03],
+                [0.03, 0.03, width - 0.03, width - 0.03, 0.03], 'r--')
         ax.plot([0.03], [0.03], 'ko')
-        ax.plot([length-0.03], [0.03], 'ko')
-        ax.plot([length-0.03], [width-0.03], 'ko')
-        ax.plot([0.03], [width-0.03], 'ko')
-        ax.text(length/2 - 0.05, -0.06, "Vue en Plan", fontsize=10, weight="bold")
+        ax.plot([length - 0.03], [0.03], 'ko')
+        ax.plot([length - 0.03], [width - 0.03], 'ko')
+        ax.plot([0.03], [width - 0.03], 'ko')
+        ax.text(length / 2 - 0.05, -0.05, "Vue en Plan", fontsize=10, weight="bold")
 
-        # Coupe A-A
+        # COUPE A-A
         base_x = 0
-        base_y = height + 0.1
+        base_y = height + 0.2
         ax.plot([base_x, base_x], [base_y, base_y + height], 'k-')
         ax.plot([base_x + length, base_x + length], [base_y, base_y + height], 'k-')
-        ax.plot([base_x, base_x + length], [base_y + height, base_y + height], 'k-')
         ax.plot([base_x, base_x + length], [base_y, base_y], 'k-')
+        ax.plot([base_x, base_x + length], [base_y + height, base_y + height], 'k-')
 
         for i in range(int(height / 0.15)):
             y = base_y + i * 0.15
@@ -58,12 +65,17 @@ async def generate_pdf(request: Request):
 
         ax.plot([base_x + 0.03, base_x + 0.03], [base_y, base_y + height], 'k-')
         ax.plot([base_x + length - 0.03, base_x + length - 0.03], [base_y, base_y + height], 'k-')
-        ax.text(base_x + length/2 - 0.05, base_y + height + 0.1, "Coupe A-A", fontsize=10, weight="bold")
+        ax.text(base_x + length / 2 - 0.05, base_y + height + 0.1, "Coupe A-A", fontsize=10, weight="bold")
 
-        plt.savefig(img_path, dpi=300)
+        # Sauvegarde de l'image
+        plt.savefig(img_path, dpi=100)
         plt.close()
 
-        # 📄 Génération du PDF
+        # Vérification image
+        if not os.path.exists(img_path):
+            return JSONResponse(status_code=500, content={"error": "plan.png non généré"})
+
+        # === PDF final
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=14)
@@ -82,5 +94,5 @@ async def generate_pdf(request: Request):
         return FileResponse(pdf_path, media_type="application/pdf", filename="rapport_ferraillage.pdf")
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
+        import traceback
+        return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
