@@ -1,71 +1,61 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
-import matplotlib.pyplot as plt
-from fpdf import FPDF
+import ezdxf
 import os
 
 app = FastAPI()
 
 @app.post("/generate")
-async def generate(request: Request):
+async def generate_dxf(request: Request):
     try:
         data = await request.json()
+        length = float(data.get("length", 0.4)) * 1000  # convert m to mm
+        width = float(data.get("width", 0.4)) * 1000
 
-        length = float(data.get("length", 0.4))
-        width = float(data.get("width", 0.4))
         armatures = data.get("Armatures", {})
         longi = armatures.get("Longitudinales", "4x12mm")
         transv = armatures.get("Transversales", "⌀6mm @20cm")
-        esp = armatures.get("Espacement", "20cm")
 
-        # Nettoyer tous les caractères illégaux
+        # Nettoyer texte pour annotation
         def clean(text):
-            return (
-                text.replace("⌀", "phi")
-                    .replace("ø", "phi")
-                    .replace("@", " à ")
-                    .encode("ascii", "ignore")
-                    .decode("ascii")
-            )
+            return text.replace("⌀", "phi").replace("@", " à ").replace("ø", "phi")
 
         longi = clean(longi)
         transv = clean(transv)
-        esp = clean(esp)
 
-        img_path = "/tmp/plan.png"
-        pdf_path = "/tmp/rapport.pdf"
+        # Création du fichier DXF
+        doc = ezdxf.new(dxfversion="R2010")
+        msp = doc.modelspace()
 
-        # PLAN EN IMAGE
-        fig, ax = plt.subplots(figsize=(5, 5))
-        ax.set_title("Plan de Ferraillage (vue de dessus)", fontsize=10)
-        ax.set_xlim(0, length)
-        ax.set_ylim(0, width)
+        # Rectangle poteau
+        msp.add_lwpolyline([(0, 0), (length, 0), (length, width), (0, width)], close=True)
 
-        ax.plot([0.05, length - 0.05], [0.05, 0.05], 'ko')
-        ax.plot([0.05, length - 0.05], [width - 0.05, width - 0.05], 'ko')
-        ax.plot([0.05, length - 0.05, length - 0.05, 0.05, 0.05],
-                [0.05, 0.05, width - 0.05, width - 0.05, 0.05], 'r--')
-        ax.axis('off')
-        plt.savefig(img_path, bbox_inches='tight')
-        plt.close()
+        # Barres longitudinales (coins)
+        cover = 40
+        radius = 8
+        msp.add_circle((cover, cover), radius)
+        msp.add_circle((length - cover, cover), radius)
+        msp.add_circle((length - cover, width - cover), radius)
+        msp.add_circle((cover, width - cover), radius)
 
-        # PDF
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=14)
-        pdf.cell(200, 10, txt="Rapport de Ferraillage BE.ON", ln=True)
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt=f"Longueur : {length} m", ln=True)
-        pdf.cell(200, 10, txt=f"Largeur : {width} m", ln=True)
-        pdf.cell(200, 10, txt=f"Armatures Longitudinales : {longi}", ln=True)
-        pdf.cell(200, 10, txt=f"Armatures Transversales : {transv}", ln=True)
-        pdf.cell(200, 10, txt=f"Espacement : {esp}", ln=True)
-        pdf.ln(10)
-        pdf.image(img_path, x=10, w=180)
+        # Étrier (cadre intérieur)
+        msp.add_lwpolyline([
+            (cover, cover),
+            (length - cover, cover),
+            (length - cover, width - cover),
+            (cover, width - cover),
+            (cover, cover)
+        ], dxfattribs={"color": 1})
 
-        pdf.output(pdf_path)
+        # Annotations
+        msp.add_text(f"Longi: {longi}", dxfattribs={"height": 150}).set_pos((0, width + 100))
+        msp.add_text(f"Transv: {transv}", dxfattribs={"height": 150}).set_pos((0, width + 300))
 
-        return FileResponse(pdf_path, media_type='application/pdf', filename="ferraillage.pdf")
+        file_path = "/tmp/plan_ferraillage.dxf"
+        doc.saveas(file_path)
+
+        return FileResponse(file_path, media_type="application/dxf", filename="plan_ferraillage.dxf")
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
