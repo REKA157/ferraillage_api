@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Request
-    from fastapi.responses import FileResponse, JSONResponse
-    import subprocess
-    import json
-    import os
+from fastapi.responses import FileResponse, JSONResponse
+import subprocess
+import json
+import os
 
-    app = FastAPI()
+app = FastAPI()
 
     @app.post("/generate")
     async def generate_plan(request: Request):
