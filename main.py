@@ -18,7 +18,7 @@ async def generate_plan(request: Request):
         # Appel du script FreeCAD via subprocess
         process = subprocess.run(
             [
-                "C:\\Program Files\\FreeCAD 1.0\\bin\\freecadcmd.exe",
+                r"C:\Program Files\FreeCAD 1.0\bin\freecadcmd.exe",
                 "generate_structure_fc.py"
             ],
             stdout=subprocess.PIPE,
